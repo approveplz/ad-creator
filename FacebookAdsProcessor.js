@@ -12,15 +12,23 @@ import {
 
 export default class FacebookAdsProcessor {
     constructor(
-        { appId, appSecret, accessToken, accountId, apiVersion = '19.0' },
+        {
+            appId,
+            appSecret,
+            accessToken,
+            accountId,
+            pageId,
+            apiVersion = '19.0',
+        },
         showDebuggingInfo = false
     ) {
         this.appId = appId;
         this.appSecret = appSecret;
         this.accessToken = accessToken;
         this.showDebuggingInfo = showDebuggingInfo;
-        this.apiVersion = apiVersion;
         this.accountId = accountId;
+        this.pageId = pageId;
+        this.apiVersion = apiVersion;
 
         FacebookAdsApi.init(accessToken);
         this.adAccount = new AdAccount(`act_${this.accountId}`);
@@ -57,7 +65,7 @@ export default class FacebookAdsProcessor {
         return response.data;
     }
 
-    createCampaign({
+    async createCampaign({
         name,
         // objective = 'OUTCOME_SALES', // double check w/ mak that this is the right one, but i think it is. it wont work with the adset optimization goal
         objective = 'OUTCOME_TRAFFIC',
@@ -66,7 +74,7 @@ export default class FacebookAdsProcessor {
         bid_strategy = 'LOWEST_COST_WITH_BID_CAP',
         daily_budget = 2000,
     }) {
-        const campaign = this.adAccount.createCampaign([], {
+        const campaign = await this.adAccount.createCampaign([], {
             name,
             status,
             objective,
@@ -80,34 +88,145 @@ export default class FacebookAdsProcessor {
             daily_budget,
         });
 
+        this.logApiCallResult(`Campaign created. ID: ${campaign.id}`, campaign);
+
         return campaign;
     }
 
-    // const createCampaign = (adAccount, { fields = [], params }) => {
-    //     const {
-    //         name,
-    //         // objective = 'OUTCOME_SALES', // double check w/ mak that this is the right one, but i think it is. it wont work with the adset optimization goal
-    //         objective = 'OUTCOME_TRAFFIC',
-    //         status = 'PAUSED',
-    //         special_ad_categories = [],
-    //         bid_strategy = 'LOWEST_COST_WITH_BID_CAP',
-    //         daily_budget = 2000,
-    //     } = params;
+    async createAdSet({
+        name,
+        campaign_id,
+        bid_amount,
+        billing_event,
+        start_time = '0', //UTC unix timestamp. ex 2015-03-12 23:59:59-07:00
+        bid_strategy = 'LOWEST_COST_WITH_BID_CAP',
+        // destination_type = 'WEBSITE',
+        end_time = '0',
+        // optimization_goal = 'OFFSITE_CONVERSIONS', //https://developers.facebook.com/docs/marketing-api/reference/ad-campaign-group/#odax
+        optimization_goal = 'LANDING_PAGE_VIEWS',
+        status = 'PAUSED',
+        targeting = {
+            geo_locations: {
+                countries: ['US'],
+            },
+            // Turn on advantage+ audience
+            targeting_automation: {
+                advantage_audience: 1,
+            },
+        },
+        // promoted_object = {
+        //     pixel_id: '327300203660662',
+        //     custom_event_type: 'TEST',
+        //     application_id: app_id,
+        // },
+        // daily_budget,
+        is_dynamic_creative = true,
+    }) {
+        if (start_time === '0') {
+            const now = moment();
+            const oneHourLater = now.add(1, 'hours');
+            const oneHourLaterUnixTimestamp = oneHourLater.unix();
+            start_time = oneHourLaterUnixTimestamp;
+        }
 
-    //     const campaign = adAccount.createCampaign(fields, {
-    //         name,
-    //         status,
-    //         objective,
-    //         special_ad_categories,
-    //         // promoted_object: {
-    //         //     pixel_id: '327300203660662',
-    //         //     custom_event_type: 'INITIATED_CHECKOUT',
-    //         //     application_id: app_id,
-    //         // },
-    //         bid_strategy,
-    //         daily_budget,
-    //     });
-    //     // logApiCallResult('createCampaign', campaign, true);
-    //     return campaign;
-    // };
+        const adSet = await this.adAccount.createAdSet([], {
+            campaign_id,
+            bid_amount,
+            bid_strategy,
+            // destination_type,
+            name,
+            start_time,
+            end_time,
+            optimization_goal,
+            status,
+            targeting,
+            // lifetime_budget,
+            // daily_budget,
+            billing_event,
+            // promoted_object,
+            is_dynamic_creative,
+        });
+
+        this.logApiCallResult(`AdSet created. ID: ${adSet.id}`, adSet);
+
+        return adSet;
+    }
+
+    createAdCreativeObjectStorySpec() {
+        const objectStorySpec = {
+            page_id: this.pageId,
+        };
+
+        return objectStorySpec;
+    }
+
+    createAdCreativeAssetFeedSpec({
+        images = [],
+        videos,
+        bodies,
+        titles,
+        descriptions,
+        website_url,
+    }) {
+        const assetFeedSpec = {
+            images,
+            videos: videos.map((video) => ({
+                video_id: video.id,
+            })),
+            bodies: bodies.map((body) => ({ text: body })),
+            titles: titles.map((title) => ({ text: title })),
+            descriptions: descriptions.map((desc) => ({ text: desc })),
+            ad_formats: ['SINGLE_VIDEO'],
+            call_to_action_types: ['SHOP_NOW'],
+            link_urls: [{ website_url }],
+        };
+
+        return assetFeedSpec;
+    }
+
+    async createAdCreative({
+        name,
+        videos,
+        bodies,
+        titles,
+        descriptions,
+        website_url,
+    }) {
+        const assetFeedSpec = this.createAdCreativeAssetFeedSpec({
+            videos,
+            bodies,
+            titles,
+            descriptions,
+            website_url,
+        });
+
+        const objectStorySpec = this.createAdCreativeObjectStorySpec({
+            page_id: this.pageId,
+        });
+
+        const adCreative = await this.adAccount.createAdCreative([], {
+            name,
+            object_story_spec: objectStorySpec,
+            asset_feed_spec: assetFeedSpec,
+        });
+        this.logApiCallResult(
+            `Created Ad Creative. Creative ID: ${adCreative.id}`,
+            adCreative
+        );
+
+        return adCreative;
+    }
+
+    async createAd({ name, adSetId, creativeId }) {
+        const ad = await this.adAccount.createAd([], {
+            name,
+            adset_id: adSetId,
+            creative: { creative_id: creativeId },
+            status: 'PAUSED',
+        });
+
+        this.logApiCallResult(`Created Facebook Ad. Ad ID: ${ad.id}`, ad);
+
+        return ad;
+    }
 }
