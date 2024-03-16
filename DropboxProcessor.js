@@ -1,15 +1,20 @@
+import dropbox from 'dropbox';
 import { promises as fs } from 'fs';
 
 export default class DropboxProcessor {
     static FILE = 'file';
     static DELETED = 'deleted';
 
-    constructor(dbx) {
-        this.dbx = dbx;
+    constructor({ accessToken }) {
+        this.dbx = new dropbox.Dropbox({
+            accessToken: accessToken,
+        });
+        console.log('Initialized Dropbox Processor');
     }
 
     processFolderEntries(files, entries) {
         // Check for files that have been deleted
+        // Use path_lower as key bc deleted files dont have id
         entries.forEach((entry) => {
             if (entry['.tag'] === DropboxProcessor.FILE) {
                 files[entry.path_lower] = entry;
@@ -29,6 +34,8 @@ export default class DropboxProcessor {
         let result = response.result;
         const files = this.processFolderEntries({}, result.entries);
 
+        // Dropbox files are paginated
+        // Use continue api with cursor to get the rest
         while (result.has_more) {
             const response = await this.dbx.filesListFolderContinue({
                 cursor: result.cursor,
@@ -37,37 +44,40 @@ export default class DropboxProcessor {
             this.processFolderEntries(files, result.entries);
         }
 
-        console.log(`Retrieved ${Object.keys(files).length} files from folder`);
+        console.log(
+            `Retrieved ${Object.keys(files).length} files from folder: ${path}`
+        );
         return files;
     }
 
-    async downloadEntry(entryPath, outputPath) {
-        const response = await this.dbx.filesDownload({ path: entryPath });
+    async downloadFile(inputPath, outputLocation) {
+        const response = await this.dbx.filesDownload({ path: inputPath });
         const result = response.result;
 
-        await fs.writeFile(
-            `${outputPath}/${result.name}`,
-            result.fileBinary,
-            'binary'
-        );
+        const outputPath = `${outputLocation}/${result.name}`;
 
-        console.log(
-            `Downloaded ${entryPath}/${result.name} from Dropbox to ${outputPath}/${result.name}`
-        );
+        await fs.writeFile(outputPath, result.fileBinary, 'binary');
+
+        console.log(`Downloaded ${inputPath} from Dropbox to ${outputPath}`);
+
+        return outputPath;
     }
 
-    async downloadEntriesFromFile(files, outputPath) {
+    async downloadFiles(files, outputLocation) {
         try {
-            const downloadEntryPromises = Object.entries(files).map(
+            const downloadFilePromises = Object.entries(files).map(
                 async ([key, val]) =>
-                    this.downloadEntry(val['path_lower'], outputPath)
+                    this.downloadFile(val['path_lower'], outputLocation)
             );
 
-            await Promise.all(downloadEntryPromises);
+            // Promises are run concurrently. If one fails, the other promises succeed but and error is still thrown
+            const downloadedFiles = await Promise.all(downloadFilePromises);
 
             console.log(
-                `Downloaded ${downloadEntryPromises.length} files from Dropbox Folder`
+                `Downloaded ${downloadedFiles.length} files from Dropbox Folder`
             );
+
+            return downloadedFiles;
         } catch (e) {
             console.log(
                 'There was an error downloading at least one file: ',
