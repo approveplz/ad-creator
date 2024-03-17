@@ -2,13 +2,7 @@ import axios from 'axios';
 import moment from 'moment';
 import fs from 'fs';
 import FormData from 'form-data';
-import {
-    FacebookAdsApi,
-    AdAccount,
-    Campaign,
-    AdSet,
-    AdImage,
-} from 'facebook-nodejs-business-sdk';
+import { FacebookAdsApi, AdAccount } from 'facebook-nodejs-business-sdk';
 
 export default class FacebookAdsProcessor {
     constructor(
@@ -30,7 +24,7 @@ export default class FacebookAdsProcessor {
         this.pageId = pageId;
         this.apiVersion = apiVersion;
 
-        FacebookAdsApi.init(accessToken);
+        this.api = FacebookAdsApi.init(accessToken);
         this.adAccount = new AdAccount(`act_${this.accountId}`);
 
         console.log('Initialized FacebookAdsProcessor');
@@ -44,6 +38,7 @@ export default class FacebookAdsProcessor {
     }
 
     async uploadAdVideo({ name, videoFilePath }) {
+        console.log(`Uploading video to Facebook. Path: ${videoFilePath}}`);
         const url = `https://graph.facebook.com/v${this.apiVersion}/${this.adAccount.id}/advideos`;
 
         const formdata = new FormData();
@@ -51,7 +46,7 @@ export default class FacebookAdsProcessor {
         formdata.append('access_token', this.accessToken);
         formdata.append('source', fs.createReadStream(videoFilePath));
 
-        let requestOptions = {
+        const requestOptions = {
             method: 'post',
             url,
             data: formdata,
@@ -60,9 +55,48 @@ export default class FacebookAdsProcessor {
         const response = await axios.request(requestOptions);
         const data = response.data;
 
-        this.logApiCallResult('Uploaded ad video to Facebook', data);
+        // this.logApiCallResult('Uploaded ad video to Facebook', data);
 
         return response.data;
+    }
+
+    async getVideoUploadStatus(videoId) {
+        const params = new URLSearchParams({
+            access_token: this.accessToken,
+            fields: 'status',
+        });
+        const url = `https://graph.facebook.com/v${this.apiVersion}/${videoId}?${params}`;
+
+        let requestOptions = {
+            method: 'get',
+            url,
+        };
+
+        const response = await axios.request(requestOptions);
+        const data = response.data.status['video_status'];
+        return data;
+    }
+
+    async waitUntilVideoReady(videoId, intervalMs, timeoutMs) {
+        console.log(`Waiting for videoId: ${videoId} to finish processing`);
+        const startTime = new Date().getTime();
+        let status = '';
+
+        while (true) {
+            status = await this.getVideoUploadStatus(videoId);
+            if (status != 'processing') {
+                break;
+            } else if (startTime + timeoutMs <= new Date().getTime) {
+                throw Error(`Video encoding timeout. Timeout: ${timeoutMs}`);
+            }
+
+            await new Promise((resolve) => setTimeout(resolve, intervalMs));
+        }
+
+        if (status != 'ready') {
+            throw Error(`Failed. Video status: ${status}`);
+        }
+        console.log(`videoId: ${videoId} has finished processing`);
     }
 
     async createCampaign({
@@ -74,6 +108,7 @@ export default class FacebookAdsProcessor {
         bid_strategy = 'LOWEST_COST_WITH_BID_CAP',
         daily_budget = 2000,
     }) {
+        console.log(`Creating Facebook Ad campaign. Name: ${name}`);
         const campaign = await this.adAccount.createCampaign([], {
             name,
             status,
@@ -192,6 +227,7 @@ export default class FacebookAdsProcessor {
         descriptions,
         website_url,
     }) {
+        console.log(`Creating Ad Creative. Name: ${name}`);
         const assetFeedSpec = this.createAdCreativeAssetFeedSpec({
             videos,
             bodies,
@@ -225,8 +261,10 @@ export default class FacebookAdsProcessor {
         descriptions,
         website_url,
     }) {
+        console.log(`Creating Ad creatives...\n`);
         const maxVideosInCreative = 5;
         const videoChunks = [];
+
         for (let i = 0; i < videos.length; i += maxVideosInCreative) {
             const videoChunk = videos.slice(i, i + maxVideosInCreative);
             videoChunks.push(videoChunk);
@@ -234,7 +272,7 @@ export default class FacebookAdsProcessor {
 
         const adCreativePromises = videoChunks.map((videos, index) =>
             this.createAdCreative({
-                name: `${name} - ${index}`,
+                name: `${name} - ${index + 1}`,
                 videos,
                 bodies,
                 titles,
@@ -263,10 +301,11 @@ export default class FacebookAdsProcessor {
     }
 
     async createAds({ name, adSetsWithCreatives }) {
+        console.log(`Creating Facebook Ads`);
         const adPromises = adSetsWithCreatives.map(
             ({ creative, adSet }, index) =>
                 this.createAd({
-                    name: `${name} - ${index}`,
+                    name: `${name} - ${index + 1}`,
                     adSetId: adSet.id,
                     creativeId: creative.id,
                 })
@@ -277,19 +316,4 @@ export default class FacebookAdsProcessor {
         console.log(`Created ${adPromises.length} ads`);
         return ads;
     }
-
-    // async createAds({ name, adSetId, creatives }) {
-    //     const adPromises = creatives.map((creative, index) =>
-    //         this.createAd({
-    //             name: `${name} - ${index}`,
-    //             adSetId,
-    //             creativeId: creative.id,
-    //         })
-    //     );
-
-    //     const ads = await Promise.all(adPromises);
-
-    //     console.log(`Created ${adPromises.length} ads`);
-    //     return ads;
-    // }
 }

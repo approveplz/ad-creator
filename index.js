@@ -23,87 +23,93 @@ const facebookAdsProcessor = new FacebookAdsProcessor(
     false
 );
 
+const dropboxInputFolder = '/input-media';
+const tempLocalFolder = '/Users/alanzhang/meta-api/AdCreator/temp';
+const dropboxProcessedFolder = '/processed-media';
+const adCampaignName = 'Campaign name';
+const adName = 'Ad Name';
+
+const bodies = [
+    'body text 1',
+    'body text 2',
+    'body text 3',
+    'body text 4',
+    'body text 5',
+];
+const titles = [
+    'title text 1',
+    'title text 2',
+    'title text 3',
+    'title text 4',
+    'title text 5',
+];
+const descriptions = [
+    'description text 1',
+    'description text 2',
+    'description text 3',
+    'description text 4',
+    'description text 5',
+];
+const website_url = 'https://onno.com';
+
+const adCreativeName = 'Ad Creative Name';
+
+const adSetName = 'Ad Set Name';
+
 const main = async () => {
     try {
         // Save file from Dropbox folder
         const files = await dropboxProcessor.getFilesFromFolder(
-            '/input-media',
+            dropboxInputFolder,
             5
         );
 
         // Download files from Dropbox to local temp folder
         const fileOutputPaths = await dropboxProcessor.downloadFiles(
             files,
-            '/Users/alanzhang/meta-api/AdCreator/temp'
+            tempLocalFolder
         );
 
         // move downloaded file to processed Dropbox folder
-        await dropboxProcessor.moveFiles(files, '/processed-media');
+        await dropboxProcessor.moveFiles(files, dropboxProcessedFolder);
 
         // Upload files to Facebook media library
-        const uploadVideoPromises = fileOutputPaths.map((outputPath) =>
-            facebookAdsProcessor.uploadAdVideo({
+        const uploadVideoPromises = fileOutputPaths.map(async (outputPath) => {
+            const video = await facebookAdsProcessor.uploadAdVideo({
                 name: path.basename(outputPath, path.extname(outputPath)),
                 videoFilePath: outputPath,
-            })
-        );
+            });
+
+            const intervalMs = 10 * 1000;
+            const timeoutMs = 3 * 60 * 1000;
+            await facebookAdsProcessor.waitUntilVideoReady(
+                video.id,
+                intervalMs,
+                timeoutMs
+            );
+            return video;
+        });
         const uploadedVideos = await Promise.all(uploadVideoPromises);
         console.log(uploadedVideos);
 
         // Delete files from local temp folder
+        console.log(`Deleting files from local folder`);
         const deleteLocalFilePromises = fileOutputPaths.map((outputPath) =>
             fs.unlink(outputPath)
         );
         await Promise.all(deleteLocalFilePromises);
         console.log(
-            `Deleted ${deleteLocalFilePromises.lenth} files from local folder`
+            `Deleted ${deleteLocalFilePromises.length} files from local folder`
         );
 
         // Create Facebook campaign
         const campaign = await facebookAdsProcessor.createCampaign({
-            name: 'test campaign name - 99',
+            name: adCampaignName,
         });
 
-        // Create Facebook adset
-        const adSet = await facebookAdsProcessor.createAdSet({
-            name: 'ad set test name -99',
-            campaign_id: campaign.id,
-            bid_amount: '1',
-            billing_event: 'IMPRESSIONS',
-        });
-
-        // video ids
-        // [
-        //     { id: '429949663026775' },
-        //     { id: '777916670536070' },
-        //     { id: '778531130446398' },
-        //     { id: '369923949206102' },
-        //     { id: '1770280636806928' },
-        //     { id: '377151991859963' }
-        // ]
-
-        const bodies = [
-            'body text 93',
-            'body text 94',
-            'body text 95',
-            'body text 96',
-        ];
-        const titles = [
-            'title text 93',
-            'title text 94',
-            'title text 95',
-            'title text 96',
-        ];
-        const descriptions = [
-            'description text 93',
-            'description text 94',
-            'description text 95',
-            'description text 96',
-        ];
-        const website_url = 'https://onno.com';
-
+        // Create AdCreatives
         const adCreatives = await facebookAdsProcessor.createAdCreatives({
-            name: 'ad creative name - 99',
+            name: adCreativeName,
             videos: uploadedVideos,
             bodies,
             titles,
@@ -111,26 +117,35 @@ const main = async () => {
             website_url,
         });
 
-        // const adCreative = await facebookAdsProcessor.createAdCreative({
-        //     name: 'ad creative name - 99',
-        //     videos: uploadedVideos.map((video) => video.id),
-        //     bodies,
-        //     titles,
-        //     descriptions,
-        //     website_url,
-        // });
+        // Create AdSet for each creative and associate them
+        const adSetsWithCreativesPromises = adCreatives.map(
+            async (creative, index) => {
+                const adSet = await facebookAdsProcessor.createAdSet({
+                    name: `${adSetName} - ${index + 1}`,
+                    campaign_id: campaign.id,
+                    bid_amount: '1',
+                    billing_event: 'IMPRESSIONS',
+                });
+                return {
+                    adSet,
+                    creative,
+                };
+            }
+        );
+        const adSetsWithCreatives = await Promise.all(
+            adSetsWithCreativesPromises
+        );
 
-        const ad = await facebookAdsProcessor.createAd({
-            name: 'ad name 99',
-            adSetId: adSet.id,
-            creativeId: adCreative.id,
+        const ads = await facebookAdsProcessor.createAds({
+            name: adName,
+            adSetsWithCreatives,
         });
     } catch (e) {
         console.log(e);
     }
 };
 
-// main();
+main();
 
 const test = async () => {
     try {
@@ -236,4 +251,42 @@ const test = async () => {
     }
 };
 
-test();
+// test();
+
+const test2 = async () => {
+    // Save file from Dropbox folder
+    const files = await dropboxProcessor.getFilesFromFolder(
+        dropboxInputFolder,
+        5
+    );
+
+    // Download files from Dropbox to local temp folder
+    const fileOutputPaths = await dropboxProcessor.downloadFiles(
+        files,
+        tempLocalFolder
+    );
+
+    // move downloaded file to processed Dropbox folder
+    await dropboxProcessor.moveFiles(files, dropboxProcessedFolder);
+
+    // Upload files to Facebook media library
+    const uploadVideoPromises = fileOutputPaths.map(async (outputPath) => {
+        const video = await facebookAdsProcessor.uploadAdVideo({
+            name: path.basename(outputPath, path.extname(outputPath)),
+            videoFilePath: outputPath,
+        });
+
+        const intervalMs = 10 * 1000;
+        const timeoutMs = 3 * 60 * 1000;
+        await facebookAdsProcessor.waitUntilVideoReady(
+            video.id,
+            intervalMs,
+            timeoutMs
+        );
+        return video;
+    });
+    const uploadedVideos = await Promise.all(uploadVideoPromises);
+    console.log(uploadedVideos);
+};
+
+// test2();

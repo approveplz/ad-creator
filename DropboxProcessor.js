@@ -26,6 +26,7 @@ export default class DropboxProcessor {
     }
 
     async getFilesFromFolder(path, limit) {
+        console.log(`Getting files from Dropbox folder: ${path}`);
         const response = await this.dbx.filesListFolder({
             path,
             limit,
@@ -45,7 +46,9 @@ export default class DropboxProcessor {
         }
 
         console.log(
-            `Retrieved ${Object.keys(files).length} files from folder: ${path}`
+            `Retrieved ${
+                Object.keys(files).length
+            } files from folder: ${path}\n`
         );
         return files;
     }
@@ -64,6 +67,7 @@ export default class DropboxProcessor {
     }
 
     async downloadFiles(files, outputLocation) {
+        console.log(`Downloading files from Dropbox folder`);
         try {
             // TODO: files is an object...it should probably be an array
             const downloadFilePromises = Object.entries(files).map(
@@ -75,7 +79,7 @@ export default class DropboxProcessor {
             const downloadedFiles = await Promise.all(downloadFilePromises);
 
             console.log(
-                `Downloaded ${downloadedFiles.length} files from Dropbox Folder`
+                `Downloaded ${downloadedFiles.length} files from Dropbox Folder\n`
             );
 
             return downloadedFiles;
@@ -88,6 +92,7 @@ export default class DropboxProcessor {
     }
 
     async moveFiles(files, toPath) {
+        console.log('Moving Dropbox files out of input folder...');
         const entries = Object.entries(files).map(([key, val]) => ({
             from_path: val['path_lower'],
             to_path: `${toPath}/${val.name}`,
@@ -95,31 +100,6 @@ export default class DropboxProcessor {
 
         await this.dbx.filesMoveBatchV2({ entries });
 
-        // const movedFiles = await Promise.all(moveFilePromises);
-        console.log(`Moved ${entries.length} files to ${toPath}`);
+        console.log(`Moved ${entries.length} files to ${toPath}\n`);
     }
-
-    // async moveFiles(files, toPath) {
-    //     const moveFilePromises = Object.entries(files).map(async ([key, val]) =>
-    //         this.dbx.filesMoveV2({
-    //             from_path: val['path_lower'],
-    //             to_path: `${toPath}/${val.name}`,
-    //         })
-    //     );
-
-    //     const movedFiles = await Promise.all(moveFilePromises);
-    //     console.log(`Moved ${movedFiles.length} files to ${toPath}`);
-    // }
-
-    // async moveFiles(fromPath, toPath) {
-    //     try {
-    //         this.dbx.filesMoveV2({
-    //             from_path: fromPath,
-    //             to_path: toPath,
-    //             allow_ownership_transfer: true,
-    //         });
-    //     } catch (e) {
-    //         console.log(e);
-    //     }
-    // }
 }
