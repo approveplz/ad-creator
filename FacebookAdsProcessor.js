@@ -217,6 +217,38 @@ export default class FacebookAdsProcessor {
         return adCreative;
     }
 
+    async createAdCreatives({
+        name,
+        videos,
+        bodies,
+        titles,
+        descriptions,
+        website_url,
+    }) {
+        const maxVideosInCreative = 5;
+        const videoChunks = [];
+        for (let i = 0; i < videos.length; i += maxVideosInCreative) {
+            const videoChunk = videos.slice(i, i + maxVideosInCreative);
+            videoChunks.push(videoChunk);
+        }
+
+        const adCreativePromises = videoChunks.map((videos, index) =>
+            this.createAdCreative({
+                name: `${name} - ${index}`,
+                videos,
+                bodies,
+                titles,
+                descriptions,
+                website_url,
+            })
+        );
+
+        const adCreatives = await Promise.all(adCreativePromises);
+        console.log(`Created ${adCreativePromises.length} ad creatives`);
+
+        return adCreatives;
+    }
+
     async createAd({ name, adSetId, creativeId }) {
         const ad = await this.adAccount.createAd([], {
             name,
@@ -229,4 +261,35 @@ export default class FacebookAdsProcessor {
 
         return ad;
     }
+
+    async createAds({ name, adSetsWithCreatives }) {
+        const adPromises = adSetsWithCreatives.map(
+            ({ creative, adSet }, index) =>
+                this.createAd({
+                    name: `${name} - ${index}`,
+                    adSetId: adSet.id,
+                    creativeId: creative.id,
+                })
+        );
+
+        const ads = await Promise.all(adPromises);
+
+        console.log(`Created ${adPromises.length} ads`);
+        return ads;
+    }
+
+    // async createAds({ name, adSetId, creatives }) {
+    //     const adPromises = creatives.map((creative, index) =>
+    //         this.createAd({
+    //             name: `${name} - ${index}`,
+    //             adSetId,
+    //             creativeId: creative.id,
+    //         })
+    //     );
+
+    //     const ads = await Promise.all(adPromises);
+
+    //     console.log(`Created ${adPromises.length} ads`);
+    //     return ads;
+    // }
 }

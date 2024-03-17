@@ -25,7 +25,7 @@ export default class DropboxProcessor {
         return files;
     }
 
-    async processFolder(path, limit) {
+    async getFilesFromFolder(path, limit) {
         const response = await this.dbx.filesListFolder({
             path,
             limit,
@@ -65,6 +65,7 @@ export default class DropboxProcessor {
 
     async downloadFiles(files, outputLocation) {
         try {
+            // TODO: files is an object...it should probably be an array
             const downloadFilePromises = Object.entries(files).map(
                 async ([key, val]) =>
                     this.downloadFile(val['path_lower'], outputLocation)
@@ -85,4 +86,40 @@ export default class DropboxProcessor {
             );
         }
     }
+
+    async moveFiles(files, toPath) {
+        const entries = Object.entries(files).map(([key, val]) => ({
+            from_path: val['path_lower'],
+            to_path: `${toPath}/${val.name}`,
+        }));
+
+        await this.dbx.filesMoveBatchV2({ entries });
+
+        // const movedFiles = await Promise.all(moveFilePromises);
+        console.log(`Moved ${entries.length} files to ${toPath}`);
+    }
+
+    // async moveFiles(files, toPath) {
+    //     const moveFilePromises = Object.entries(files).map(async ([key, val]) =>
+    //         this.dbx.filesMoveV2({
+    //             from_path: val['path_lower'],
+    //             to_path: `${toPath}/${val.name}`,
+    //         })
+    //     );
+
+    //     const movedFiles = await Promise.all(moveFilePromises);
+    //     console.log(`Moved ${movedFiles.length} files to ${toPath}`);
+    // }
+
+    // async moveFiles(fromPath, toPath) {
+    //     try {
+    //         this.dbx.filesMoveV2({
+    //             from_path: fromPath,
+    //             to_path: toPath,
+    //             allow_ownership_transfer: true,
+    //         });
+    //     } catch (e) {
+    //         console.log(e);
+    //     }
+    // }
 }
