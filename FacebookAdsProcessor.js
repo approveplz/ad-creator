@@ -55,9 +55,7 @@ export default class FacebookAdsProcessor {
         const response = await axios.request(requestOptions);
         const data = response.data;
 
-        // this.logApiCallResult('Uploaded ad video to Facebook', data);
-
-        return response.data;
+        return data;
     }
 
     async getVideoUploadStatus(videoId) {
